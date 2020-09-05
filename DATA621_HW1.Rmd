@@ -1,0 +1,105 @@
+---
+title: "DATA621 HW1"
+author: "Misha Kollontai"
+date: "9/5/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Data Exploration
+
+```{r}
+library(tidyverse)
+MB_train <- read.csv("moneyball-training-data.csv")
+```
+Let's look at all of the metrics in order to evaluate the presence of outliers and quality of the data overall. 
+
+```{r echo=FALSE}
+ggplot(stack(MB_train[,-1]), aes(x = ind, y = values)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)
+        )
+```
+
+Hits Allowed (TEAM_PITCHING_H) and Strikeouts by Pitchers (TEAM_PITCHING_SO) clearly needs looking at. 
+
+Let's take a look at  the number of strikeouts a team pitching staff has achieved in a given season. First, let's calculate the maximum number strikeouts a team can achieve per season assuming 162 games. This would require 3 strikeouts every 9 innings.
+
+The record number of strikeouts by a pitching staff in a season is 1,687 by the Houston Astros in 2018 (this datapoint is not included here since the data only covers up to 2006). Since some of the data is extrapolated to assume a 162 game season, it's possible some earlier seasons may equate to more, so let's use 2000 as a max possible value. 
+
+```{r Strikeouts by Pitchers}
+Max_SO <- 162*9*3 #This assumes a season in which every out was a strikeout (obviously never happened)
+
+library(ggplot2)
+a <- ggplot(data = MB_train, aes(x = INDEX, y = TEAM_PITCHING_SO)) + geom_point()
+a + geom_hline(yintercept=Max_SO, linetype = 'dashed') + 
+  geom_hline(yintercept=2000, linetype = 'dashed', color='red')
+```
+
+According to [MLB.com](http://mlb.mlb.com/mlb/history/rare_feats/index.jsp?feature=most_hits_game) the most hits allowed in a game was 33. Assuming a 162 game seaosn, the highest number of hits allowed in a season possible would be $162*33 = 5346$ hits. Anything above this is impossible.
+
+```{r Hits by Pitchers}
+most_hits <- 162*33 
+
+library(ggplot2)
+a <- ggplot(data = MB_train, aes(x = INDEX, y = TEAM_PITCHING_H)) + geom_point()
+a + geom_hline(yintercept=most_hits, linetype = 'dashed', color='red')
+```
+
+Based on the graph above, it looks like we are potentially leaving a large amount of erroneous data in the set, but we have no factual basis to remove it on. 
+
+We can clearly see that there is a fair amount of outliers in our data. To begin, let's simply remove these rows of data since we can't have faith in the rest of the data associated with the measurement. We can also remove the rows associated with other clearly erroneous data:
+
+* No team has ever hit 0 home runs in a season according to [baseball-almanac1](https://www.baseball-almanac.com/recbooks/rb_hr7.shtml), so remove rows that claim such a season.
+
+* No team has ever had 0 hitter strikeouts in a season according to [baseball-almanac2](https://www.baseball-almanac.com/recbooks/rb_strike2.shtml), so remove rows that claim such a season.
+
+* According to [this article](http://research.sabr.org/journals/pitchers-giving-up-home-runs#:~:text=The%20fewest%20home%20runs%20given,more%20productive%20home%20run%20year.) "The fewest home runs given up by a pitching staff in one season was the four relinquished by the marvelous mound corps of the 1902 Pittsburgh Pirates over a 140-game schedule.
+
+* Trusting the [research of user BowlOfRed](https://sports.stackexchange.com/questions/16246/what-is-the-mlb-record-for-most-errors-by-one-team-in-one-season-during-the-mode) the highest number of errors by a team in a season is Washington in 1886 commiting 867 errors in 122 games. If we extrapolate that number to 162 games we can cut out the false datapoints here as well. 
+
+
+```{r clean data from outliers}
+max_errors <- 867/122*162
+MB_train_clean <- MB_train[!(MB_train$TEAM_PITCHING_SO > 2000),]
+MB_train_clean <- MB_train_clean[!(MB_train_clean$TEAM_BATTING_HR == 0),]
+MB_train_clean <- MB_train_clean[!(MB_train_clean$TEAM_BATTING_SO == 0),]
+MB_train_clean <- MB_train_clean[!(MB_train_clean$TEAM_PITCHING_HR < 4),]
+MB_train_clean <- MB_train_clean[!(MB_train_clean$TEAM_PITCHING_H > most_hits),]
+MB_train_clean <- MB_train_clean[!(MB_train_clean$TEAM_FIELDING_E > max_errors),]
+
+```
+
+
+```{r echo=FALSE}
+ggplot(stack(MB_train_clean[,-1]), aes(x = ind, y = values)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+  ylim(0,3000)
+
+```
+
+We can see that a large amount of datapoints are missing (4550 according to the warning). Let's replace the NA's with the mean value for each column. 
+
+```{r}
+for(i in 1:ncol(MB_train_clean)){
+  MB_train_clean[is.na(MB_train_clean[,i]), i] <- mean(MB_train_clean[,i], na.rm = TRUE)
+}
+
+```
+
+```{r echo=FALSE}
+ggplot(stack(MB_train_clean[,-1]), aes(x = ind, y = values)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+  ylim(0,3000)
+
+```
+
+
+```{r}
+colnames(MB_train_clean)[colSums(is.na(MB_train_clean)) > 0]
+```
