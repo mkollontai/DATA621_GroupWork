@@ -1,6 +1,6 @@
 ---
 title: "DATA621 HW1"
-author: "Misha Kollontai"
+author: "Misha Kollontai, Matthew Baker, Erinda Budo, Subhalaxmi Rout, Don Padmaperuma"
 date: "9/5/2020"
 output: html_document
 ---
