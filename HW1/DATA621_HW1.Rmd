@@ -160,9 +160,29 @@ Let's attempt a prediction using the latest model. To do so we must take a subse
 MB_test<- read.csv("moneyball-evaluation-data.csv")
 ```
 
+Let's identify all of the rows containing obvious outliers in the data:
+
 ```{r}
-include <- c('INDEX', 'TEAM_BATTING_3B', 'TEAM_BATTING_HR', 'TEAM_BATTING_BB', 'TEAM_BASERUN_SB', 'TEAM_PITCHING_H',  'TEAM_PITCHING_BB', 'TEAM_FIELDING_E')
-test_sub <- MB_test[include] 
-test_sub$P_Wins <- round(predict(mod4,  newdata = MB_test),0)
-test_sub[c('INDEX','P_Wins')]
+Out <- function(x){
+  if (x[2] > most_hits * 1.25 | x[11] > most_hits*1.25) { 
+    return (1)
+  } else if (x[7] > Max_SO | x[14] > Max_SO) {
+    return (1)
+  } else if (x[15] > max_errors){
+    return (1)
+  } else {
+    return (0)
+  }
+}
+```
+
+```{r}
+#First we replace NAs with the median values
+for(i in 1:ncol(MB_test)){
+  MB_test[is.na(MB_test[,i]), i] <- median(MB_test[,i], na.rm = TRUE)
+}
+
+MB_test$Outliers <- apply(MB_test, 1, FUN = Out) 
+MB_test$P_Wins <- round(predict(mod4,  newdata = MB_test),0)
+MB_test[c('INDEX','P_Wins')]
 ```
