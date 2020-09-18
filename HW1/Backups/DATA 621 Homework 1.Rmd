@@ -258,17 +258,53 @@ par(mfrow=c(2,2))
 plot(model1)
 ```
 
+
+
 ### Model 2  
+(Erinda added the models below)
+Variables will be removed one by one until the most optimal output is achieved.I used  this in order to remove those features that do not have a significant effect on the dependent variable or prediction of output.
+
+#### Summary and vif
+
+```{r echo=FALSE}
+model2 <- lm(TARGET_WINS ~ TEAM_BATTING_H + TEAM_BASERUN_SB  + TEAM_FIELDING_E  + TEAM_BATTING_HR, MB_train_prep2)
+
+summary(model2)
+summodel2 <- summary(model2)
+```
 
 
+```{r}
+library(car)
+vif(model2)
+```
+#### Diagnostics plots  
+
+```{r}
+par(mfrow=c(2,2))
+plot(model2)
+```
 
 
+### Model 3
 
+This model will focus only on the variables that are statistically significant - in order to see if only those variables allow for a better model.
 
+#### Summary and vif
+```{r echo=FALSE}
+model3 <- lm(TARGET_WINS ~ TEAM_BATTING_H  + TEAM_BATTING_3B  + TEAM_BATTING_HR  + TEAM_BATTING_SO + TEAM_BASERUN_SB + TEAM_PITCHING_SO + TEAM_FIELDING_E + TEAM_FIELDING_DP, MB_train_prep2)
 
+summary(model3)
+summodel3 <- summary(model3)
+```
 
-
-
-
-
-
+```{r}
+library(car)
+vif(model3)
+```
+#### Diagnostics plots  
+```{r}
+par(mfrow=c(2,2))
+plot(model3)
+```
+### Compare models
