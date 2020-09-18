@@ -1,0 +1,274 @@
+---
+title: "DATA621 HW1"
+author: "Don Padmaperuma"
+date: "9/14/2020"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Overview
+In this homework assignment, we will explore, analyze and model a data set containing approximately 2200
+records. Each record represents a professional baseball team from the years 1871 to 2006 inclusive. Each record
+has the performance of the team for the given year, with all of the statistics adjusted to match the performance of
+a 162 game season.
+Our objective is to build a multiple linear regression model on the training data to predict the number of wins
+for the team. 
+
+## Libraries  
+
+```{r}
+library(tidyverse)
+library(ggcorrplot)
+library(pastecs)
+library(reshape)
+library(ggplot2)
+library(mice)
+library(VIM)
+```
+
+
+## Data Exploration
+
+The original data was loaded containing 2276 rows and 16 columns related to batting, base run, pitching, and fielding. A summary and boxplots of all variables suggest some columns have missing data, and some may contain outliers.
+
+```{r}
+#Read the training and test data
+
+train <- read.csv("moneyball-training-data.csv")
+test <- read.csv("moneyball-evaluation-data.csv")
+```
+
+```{r}
+#elimination index column in both data files
+MB_train <- train[-1]
+MB_test <- test[-1]
+```
+
+We can only use the variables given to us (or variables that we derive from the variables
+provided). Below codes shows the variables of interest in the data set:
+
+```{r}
+dim(MB_train)
+```
+```{r}
+summary(MB_train)
+```
+
+Few more descriptive statistics of MB_train data.The descriptive statistics below shows the the mean, mode, **standard deviation**, minimum and maximum of each variable in the dataset.
+
+```{r}
+stat.desc(MB_train, basic = F)
+```
+
+
+Let's take a closer look at the number of wins or **TARGET_WINS** variable. 
+
+```{r}
+boxplot(MB_train$TARGET_WINS, xlab = "Target Wins")
+```
+
+Other variables
+
+```{r}
+par(mfrow=c(3,5))
+
+x <- c(2:16)
+for (val in x) {
+  boxplot(MB_train[,val], xlab=names(MB_train[val]))$out
+}
+```
+
+Another look at the variables. Being able to examine Skewness and outliers of the data will help us to chose the model. This is important as some models will require transformation of data.
+
+
+
+```{r}
+par(mfrow = c(3,3))
+
+datasub = melt(MB_train)
+ggplot(datasub, aes(x=value)) + 
+  geom_density(fill = 'blue') + facet_wrap(~variable, scales = 'free')
+```
+
+### Relationship with target variable TARGET_WIN  
+
+```{r}
+#### Target Wins vs all variables
+par(mfrow=c(3,5))
+
+x <- c(2:16)
+for (val in x) {
+plot(MB_train[,val],MB_train$TARGET_WINS, xlab=names(MB_train[val]))
+}
+```
+```{r}
+par(mfrow=c(1,1))
+
+cor(MB_train, use = "complete.obs")[,1]
+```
+
+### Correlation among predictor variables
+
+```{r}
+library(corrplot)
+corr<- round(cor(MB_train[-1], use="pairwise.complete.obs", method = "pearson"),1)
+corrplot(corr, method = "color", 
+         type = "upper", order = "original", number.cex = .7,
+         addCoef.col = "black", # Add coefficient of correlation
+         tl.col = "black", tl.srt = 90, # Text label color and rotation
+                  # hide correlation coefficient on the principal diagonal
+         diag = TRUE)
+```
+
+
+
+## Data Preparation
+
+Here we will be preparing data by adding, removing, imputing and treating for outliers for modeling.
+
+### Missing Values
+
+I am using one of the widely used MICE package to analyze the missing values of the data set. Also a visual representation of the values. 
+
+```{r}
+md.pattern(MB_train)
+```
+```{r}
+aggr_plot <- aggr(MB_train, 
+                  col=c('lightblue','red'), numbers=TRUE, sortVars=TRUE, labels=names(MB_train), cex.axis=.7, gap=3, ylab=c("Histogram of missing data","Pattern"))
+```
+```{r}
+colnames(MB_train)[colSums(is.na(MB_train)) > 0]
+```
+### Treating the outliers  
+
+
+#### Impute missing Data
+
+Replacing data with mean or median is based on how important this data to the dataset. As this data has numeric feature I chose to replace them with mean of the data. 
+
+```{r}
+MB_train_prep = MB_train %>% 
+  mutate(TEAM_BASERUN_CS = 
+           ifelse(is.na(TEAM_BASERUN_CS), 
+                  mean(TEAM_BASERUN_CS, na.rm=TRUE), TEAM_BASERUN_CS)) %>% 
+
+  mutate(TEAM_BASERUN_SB = 
+           ifelse(is.na(TEAM_BASERUN_SB), 
+                  mean(TEAM_BASERUN_SB, na.rm=TRUE), TEAM_BASERUN_SB)) %>% 
+
+  mutate(TEAM_PITCHING_SO = 
+           ifelse(is.na(TEAM_PITCHING_SO), 
+                  mean(TEAM_PITCHING_SO, na.rm=TRUE), TEAM_PITCHING_SO)) %>% 
+
+  mutate(TEAM_BATTING_SO = 
+           ifelse(is.na(TEAM_BATTING_SO), 
+                  mean(TEAM_BATTING_SO, na.rm=TRUE), TEAM_BATTING_SO)) %>% 
+
+  mutate(TEAM_FIELDING_DP = 
+           ifelse(is.na(TEAM_FIELDING_DP), 
+                  mean(TEAM_FIELDING_DP, na.rm=TRUE), TEAM_FIELDING_DP))
+
+```
+
+Let's take a look at summary of our new prepped dataset. Now we can see there are no more missing data.
+
+
+```{r}
+summary(MB_train_prep)
+```
+
+```{r}
+par(mfrow = c(3,3))
+
+datasub = melt(MB_train_prep)
+ggplot(datasub, aes(x=value)) + 
+  geom_density(fill = 'blue') + facet_wrap(~variable, scales = 'free')
+```
+
+#### capping outliers
+
+If a value is higher than the 1.5xIQR above the upper quartile (Q3), the value will be considered as outlier. Similarly, if a value is lower than the 1.5xIQR below the lower quartile (Q1), the value will be considered as outlier.
+For missing values that lie outside the 1.5 * IQR limits, we could cap it by replacing those observations outside the lower limit with the value of 5th %ile and those that lie above the upper limit, with the value of 95th %ile. Below is a sample code that achieves this.  
+
+```{r}
+# Outlier Capping
+
+MB_train_prep2 <- MB_train_prep
+
+id <- c(2:12)
+for (val in id) {
+  qnt <- quantile(MB_train_prep2[,val], probs=c(.25, .75), na.rm = T)
+  caps <- quantile(MB_train_prep2[,val], probs=c(.05, .95), na.rm = T)
+  H <- 1.5 * IQR(MB_train_prep2[,val], na.rm = T)
+  MB_train_prep2[,val][MB_train_prep2[,val] < (qnt[1] - H)] <- caps[1]
+  MB_train_prep2[,val][MB_train_prep2[,val] > (qnt[2] + H)] <- caps[2]
+
+}
+```
+
+After these data preparations tasks lets take a look at the correlation of all the possible predictor variables.
+
+```{r}
+corr<- round(cor(MB_train_prep2[-1], use="pairwise.complete.obs", method = "pearson"),1)
+corrplot(corr, method = "color", 
+         type = "upper", order = "original", number.cex = .7,
+         addCoef.col = "black", # Add coefficient of correlation
+         tl.col = "black", tl.srt = 90, # Text label color and rotation
+                  # hide correlation coefficient on the principal diagonal
+         diag = TRUE)
+```
+
+## Build Models  
+
+Using the training data set, build at least three different multiple linear regression models, using different variables
+(or the same variables with different transformations). Since we have not yet covered automated variable
+selection methods, you should select the variables manually (unless you previously learned Forward or Stepwise
+selection, etc.). Since you manually selected a variable for inclusion into the model or exclusion into the model,
+indicate why this was done.
+Discuss the coefficients in the models, do they make sense? For example, if a team hits a lot of Home Runs, it
+would be reasonably expected that such a team would win more games. However, if the coefficient is negative
+(suggesting that the team would lose more games), then that needs to be discussed. Are you keeping the model
+even though it is counter intuitive? Why? The boss needs to know.  
+
+### Model 1
+
+First model is with all variables included. 
+
+#### Summary and vif
+
+```{r}
+model1 <- lm(TARGET_WINS ~., data = MB_train_prep2)
+summary(model1)
+```
+
+```{r}
+library(car)
+vif(model1)
+```
+#### Diagnostics plots  
+
+```{r}
+par(mfrow=c(2,2))
+plot(model1)
+```
+
+### Model 2  
+
+
+
+
+
+
+
+
+
+
+
+
+
