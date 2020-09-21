@@ -2,7 +2,7 @@
 title: "DATA621_HW1_team"
 author: "Matthew Baker, Misha Kollontai, Erinda Budo, Don Padmaperuma, Subhalaxmi Rout"
 date: "9/20/2020"
-output: html_document
+output: pdf_document
 ---
 
 ## Overview
@@ -134,7 +134,9 @@ for (val in x) {
 
 
 
-### Relationship with target variable TARGET_WIN  
+### Relationship with target variable TARGET_WIN
+
+Using the plots below we can get a quick overview of relationships between our input variables and the target variable. Unfortunately nearly all of our variables in their current state are fairly widely distributed and do not show an obvious trend in the relationship with the wins. It appears that we need to account for multiple variables in order to create an accurate model. 
 
 ```{r}
 #### Target Wins vs all variables
@@ -153,6 +155,7 @@ par(mfrow=c(1,1))
 cor(MB_train, use = "complete.obs")[,1]
 ```
 
+By looking at correlation between our predictor variables we can get an idea of those that are tied closely together - this may help us determine when including multiples may be redundant and removing one or two of the closely related variables may simplify our model without a strong negative impact on our model accuracy. 
 
 ```{r}
 corr<- round(cor(MB_train[-1], use="pairwise.complete.obs", method = "pearson"),1)
@@ -163,6 +166,8 @@ corrplot(corr, method = "color",
                   # hide correlation coefficient on the principal diagonal
          diag = TRUE)
 ```
+
+## Cleaning Data based on what we know about the game
 
 Let's take a look at  the number of strikeouts a team pitching staff has achieved in a given season. First, let's calculate the maximum number strikeouts a team can achieve per season assuming 162 games. This would require 3 strikeouts every 9 innings.
 
@@ -189,9 +194,6 @@ ggplot(stack(MB_train[,-1]), aes(x = ind, y = values)) +
 ```
 
 Based on the graph above, it looks like we are potentially leaving a large amount of erroneous data in the set, but we have no factual basis to remove it on. 
-
-
-## Cleaning Data based on what we know so far
 
 We can clearly see that there is a fair amount of outliers in our data. To begin, let's simply remove these rows of data since we can't have faith in the rest of the data associated with the measurement. We can also remove the rows associated with other clearly erroneous data:
 
