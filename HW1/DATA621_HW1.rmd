@@ -377,7 +377,7 @@ plot(histA, col = c1, freq = FALSE)
 plot(histB, col = c2, freq = FALSE, add = TRUE, xlim = c(0,150))
 ```
 
-This histogram overlayed on our original data suggest our predictions at least follow the values of the training dataset. The predicted data is in blue and the training data is in pink. The distribution seems close to normal, centered around 80/90 wins. The trainig data showed a peak between 80-85. There is nothing from this distributio nthat immediately jumps out as erroneous. .The removal of the "Outlier" rows seems to have helped with that.
+This histogram overlayed on our original data suggest our predictions at least follow the values of the training dataset. The predicted data is in blue and the training data is in pink. The distribution seems close to normal, centered around 80/90 wins. The trainig data showed a peak between 80-85. There is nothing from this distribution that immediately jumps out as erroneous. The removal of the "Outlier" rows seems to have helped with that.
 
 We can't test out the accuracy of our model as we don't have the true 'Win' values for our test dataset, but below see a list of the predicted wins for all of the rows not containing outliers in the data:
 
