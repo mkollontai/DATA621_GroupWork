@@ -1,0 +1,488 @@
+---
+title: "DATA621 HW1"
+author: "Misha Kollontai, Matthew Baker, Erinda Budo, Subhalaxmi Rout, Don Padmaperuma"
+date: "9/5/2020"
+output:
+  prettydoc::html_pretty: null
+  html_document:
+    df_print: paged
+  pdf_document: default
+  theme: architect
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(rmdformats)
+library(prettydoc)
+library(ggplot2)
+library(DT)
+library(kableExtra)
+library(psych)
+library(corrplot)
+library(stats)
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+
+## Overview
+In this homework assignment, you will explore, analyze and model a data set containing approximately 2200 records. Each record represents a professional baseball team from the years 1871 to 2006 inclusive. Each record has the performance of the team for the given year, with all of the statistics adjusted to match the performance of a 162 game season.
+
+Your objective is to build a multiple linear regression model on the training data to predict the number of wins for the team. You can only use the variables given to you (or variables that you derive from the variables provided). Below is a short description of the variables of interest in the data set:
+
+![](/Users/subhalaxmirout/DATA 621/Short_Description.png)
+
+## Data Exploration
+
+The goal of each team is to win as many games out of a 162 game season as possible. This allows a ticket to the post season and a chance to play at the World Series, where the champion is defined.<br>
+
+The sample data having 2276 observations dating from 1871 to 2006. Data consist of total 16 variables, out of that 15 variables are explanatory variables and 1 is taget variable i.e `TARGET_WINS`.
+
+We will first look at the data to get a sense of what we have. 
+
+```{r}
+data_url <- "https://raw.githubusercontent.com/mkollontai/DATA621_GroupWork/master/HW1/moneyball-training-data.csv"
+MB_train <- read.csv(data_url)
+DT::datatable(head(MB_train))
+```
+Let's see the summary statistics of data.
+```{r}
+
+MB_summary <- function(MB_train){
+  MB_train %>%
+    summary() %>%
+    kable() %>%
+    kable_styling()
+}
+
+MB_summary(MB_train)
+
+```
+The above tables shows `TEAM_BATTING_HBP` and `TEAM_BASERUN_CS` having more `NA`. We will come to that part later.
+The co-relation plot shows the relationship between Target_Win with other variables.
+```{r fig.width=8, fig.height=10}
+# Correlations of columns from 1 to 8
+cor <-cor(MB_train[2:17], use="complete.obs", method="pearson")
+
+#round to two decimals
+DT::datatable(round(cor, 2))
+
+# visualisation of correlation
+corrplot(cor, method="square")
+```
+
+Above plot shows the strong co-relation between below variables.
+
+* TEAM_BATTING_H -> TEAM_PITCHING_H
+* TEAM_BATTING_HR -> TEAM_PITCHING_HR
+* TEAM_BATTING_BB -> TEAM_PITCHING_BB
+* TEAM_BATTING_SO -> TEAM_PITCHING_SO
+* TEAM_BASERUN_CS -> TEAM_BASERUN_SB
+
+
+Let's look at all of the metrics in order to evaluate the presence of outliers and quality of the data overall. 
+To get the better clarity divide the data in to 4 groups i.e 
+
+* batting
+* baserun
+* fielding
+* pitching
+
+Box-plot for batting variables.<br>
+```{r}
+batting_df <- MB_train[,c("TEAM_BATTING_H","TEAM_BATTING_2B","TEAM_BATTING_3B","TEAM_BATTING_HR","TEAM_BATTING_BB","TEAM_BATTING_SO","TEAM_BATTING_HBP")]
+
+ggplot(stack(batting_df), aes(x = ind, y = values)) +
+  geom_boxplot(col="darkblue") + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+```
+
+Above plot shows `TEAM_BATTING_H` having more outliers.<br>
+
+Box-plot for baserun variables.<br>
+
+```{r}
+#colnames(MB_train)
+baserun_df <- MB_train[,c("TEAM_BASERUN_SB","TEAM_BASERUN_CS")]
+
+ggplot(stack(baserun_df), aes(x = ind, y = values)) +
+  geom_boxplot(col="darkblue") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+```
+
+Box-plot for fielding variables.<br>
+
+```{r}
+#colnames(MB_train)
+fielding_df <- MB_train[,c("TEAM_FIELDING_E","TEAM_FIELDING_DP")]
+
+ggplot(stack(fielding_df), aes(x = ind, y = values)) +
+  geom_boxplot(col="darkblue") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+```
+
+Box-plot for pitching variables.<br>
+
+```{r}
+
+pitching_df <- MB_train[,c("TEAM_PITCHING_H","TEAM_PITCHING_HR","TEAM_PITCHING_BB","TEAM_PITCHING_SO")]
+
+ggplot(stack(pitching_df), aes(x = ind, y = values)) +
+  geom_boxplot(col="darkblue") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+```
+
+There are many NAs avalaible in the sample data, replace the NAs with zero and below shows the sample data distribution.
+
+```{r fig.height=10, fig.width=10, message=FALSE, warning=FALSE}
+mb_hist <- MB_train
+
+mb_hist$TEAM_BATTING_SO <- ifelse(is.na(mb_hist$TEAM_BATTING_SO), 0, mb_hist$TEAM_BATTING_SO)
+mb_hist$TEAM_BASERUN_SB <- ifelse(is.na(mb_hist$TEAM_BASERUN_SB), 0, mb_hist$TEAM_BASERUN_SB)
+mb_hist$TEAM_BASERUN_CS <- ifelse(is.na(mb_hist$TEAM_BASERUN_CS), 0, mb_hist$TEAM_BASERUN_CS)
+mb_hist$TEAM_BATTING_HBP <- ifelse(is.na(mb_hist$TEAM_BATTING_HBP), 0, mb_hist$TEAM_BATTING_HBP)
+mb_hist$TEAM_PITCHING_SO <- ifelse(is.na(mb_hist$TEAM_PITCHING_SO), 0, mb_hist$TEAM_PITCHING_SO)
+mb_hist$TEAM_FIELDING_DP <- ifelse(is.na(mb_hist$TEAM_FIELDING_DP), 0, mb_hist$TEAM_FIELDING_DP)
+
+# remove index col
+mb_hist <- mb_hist[,-1 ]
+# plot distribution
+mb_hist %>%
+  purrr::keep(is.numeric) %>%                  
+  tidyr::gather() %>%                             
+  ggplot(aes(value)) +                    
+    facet_wrap(~ key, scales = "free") +  
+    geom_histogram(bins = 35, col = "darkblue", fill = "darkblue")               
+```
+
+The above distribution shows some are left skewed, right skewed, and normally distributed. We also see other variables have many zeros  that need to be addressed because the are significantly skewing the data. Two particularly high offenders in this area were `TEAM_BATTING_HBP` and `TEAM_BASERUN_CS`.
+Data preparation is in the next section will handle this issue so that the resulting models perform better without removing
+rows of data.
+
+## Data Preparation
+
+For the data preparation  main focus in addressing outliers and replace NAs with median/mean, log transformation for skewed distribution and creating additional variables. First, create additional variables and then review outliers. $ new variables we are going to add in the data those are TEAM_BATTING_1B, TEAM_BATTING_WALK, TEAM_BASERUN_SB_RATIO, and TEAM_BASERUN_CS_RATIO.
+`TEAM_BATTING_H` having singles, doubles, triples and home run. From this one more variable can calculate i.e `TEAM_BATTING_1B`. Below is the formula: <br>
+`TEAM_BATTING_1B = TEAM_BATTING_H - TEAM_BATTING_2B - TEAM_BATTING_3B - TEAM_BATTING_HR`
+Total hits by team  can be the sum of `TEAM_BATTING_BB` AND `TEAM_BATTING_HBP`
+`TEAM_BATTING_WALK = TEAM_BATTING_BB + TEAM_BATTING_HBP`. In co-relation plot we see TEAM_BASERUN_SB_RATIO and TEAM_BASERUN_SB_RATIO having strong co-relation. 
+`TEAM_BASERUN_SB_RATIO` and `TEAM_BASERUN_CS_RATIO` are the ratio of Caught Stealing and Stolen Bases.
+
+```{r}
+# created variables
+MB_train$TEAM_BATTING_1B <- MB_train$TEAM_BATTING_H - MB_train$TEAM_BATTING_2B - MB_train$TEAM_BATTING_3B - MB_train$TEAM_BATTING_HR
+MB_train$TEAM_BASERUN_SB_RATIO <- MB_train$TEAM_BASERUN_SB/(MB_train$TEAM_BASERUN_SB + MB_train$TEAM_BASERUN_CS)
+MB_train$TEAM_BASERUN_CS_RATIO <- MB_train$TEAM_BASERUN_CS/(MB_train$TEAM_BASERUN_SB + MB_train$TEAM_BASERUN_CS)
+MB_train$TEAM_BATTING_WALK <- MB_train$TEAM_BATTING_BB+MB_train$TEAM_BATTING_HBP
+```
+Below shows distribution of singles with total hits by batting team and caught stealing ratio with stealing base ratio.
+
+```{r}
+par(mfrow=c(2,2), mai=c(0.5,0.5,0.5,0.2))
+par(fig=c(0,0.5,0.25,1))
+hist(MB_train$TEAM_BATTING_H, main="Total Hits", breaks=30, col="darkblue")
+par(fig=c(0.5,1,0.25,1), new=TRUE)
+hist(MB_train$TEAM_BATTING_1B, main="Singles", breaks=30, col="darkblue")
+par(fig=c(0,0.5,0,0.3), new=TRUE)
+boxplot(MB_train$TEAM_BATTING_H, horizontal=TRUE, width=1, col="darkblue")
+par(fig=c(0.5,1,0,0.3), new=TRUE)
+boxplot(MB_train$TEAM_BATTING_1B, horizontal=TRUE, width=1, col="darkblue")
+par(mfrow=c(1,1))
+```
+
+```{r}
+par(mfrow=c(2,2), mai=c(0.5,0.5,0.5,0.2))
+par(fig=c(0,0.5,0.25,1))
+hist(MB_train$TEAM_BASERUN_CS_RATIO, main="Caught Stealing Ratio", breaks=30, col="firebrick")
+par(fig=c(0.5,1,0.25,1), new=TRUE)
+hist(MB_train$TEAM_BASERUN_SB_RATIO, main="Stolen Bases Ratio", breaks=30, col="darkblue")
+par(fig=c(0,0.5,0,0.3), new=TRUE)
+boxplot(MB_train$TEAM_BASERUN_CS_RATIO, horizontal=TRUE, width=1, col="firebrick")
+par(fig=c(0.5,1,0,0.3), new=TRUE)
+boxplot(MB_train$TEAM_BASERUN_SB_RATIO, horizontal=TRUE, width=1, col="darkblue")
+par(mfrow=c(1,1))
+```
+
+```{r}
+MB_summary(MB_train)
+```
+
+Sample data having NAs, lets replace NA with mean/median. We will create 2 datasets, one dataset replace NA with mean and another replace NA with median. We apply our model on these dataset. 
+
+```{r}
+MB_train_mean <- MB_train
+# replace by mean
+MB_train_mean$TEAM_BATTING_SO[is.na(MB_train_mean$TEAM_BATTING_SO)==TRUE] <- mean(MB_train_mean$TEAM_BATTING_SO, na.rm = TRUE)
+MB_train_mean$TEAM_BASERUN_SB[is.na(MB_train_mean$TEAM_BASERUN_SB)==TRUE] <- mean(MB_train_mean$TEAM_BASERUN_SB, na.rm = TRUE)
+MB_train_mean$TEAM_BASERUN_CS[is.na(MB_train_mean$TEAM_BASERUN_CS)==TRUE] <- mean(MB_train_mean$TEAM_BASERUN_CS, na.rm = TRUE)
+MB_train_mean$TEAM_BATTING_HBP[is.na(MB_train_mean$TEAM_BATTING_HBP)==TRUE] <- mean(MB_train_mean$TEAM_BATTING_HBP, na.rm = TRUE)
+MB_train_mean$TEAM_PITCHING_SO[is.na(MB_train_mean$TEAM_PITCHING_SO)==TRUE] <- mean(MB_train_mean$TEAM_PITCHING_SO, na.rm = TRUE)
+MB_train_mean$TEAM_FIELDING_DP[is.na(MB_train_mean$TEAM_FIELDING_DP)==TRUE] <- mean(MB_train_mean$TEAM_FIELDING_DP, na.rm = TRUE)
+MB_train_mean$TEAM_BASERUN_SB_RATIO[is.na(MB_train_mean$TEAM_BASERUN_SB_RATIO)==TRUE] <- mean(MB_train_mean$TEAM_BASERUN_SB_RATIO, na.rm = TRUE)
+MB_train_mean$TEAM_BASERUN_CS_RATIO[is.na(MB_train_mean$TEAM_BASERUN_CS_RATIO)==TRUE] <- mean(MB_train_mean$TEAM_BASERUN_CS_RATIO, na.rm = TRUE)
+MB_train_mean$TEAM_BATTING_WALK[is.na(MB_train_mean$TEAM_BATTING_WALK)==TRUE] <- mean(MB_train_mean$TEAM_BATTING_WALK, na.rm = TRUE)
+# replace by median
+MB_train_median <- MB_train
+MB_train_median$TEAM_BATTING_SO[is.na(MB_train_median$TEAM_BATTING_SO)==TRUE] <- median(MB_train_median$TEAM_BATTING_SO, na.rm = TRUE)
+MB_train_median$TEAM_BASERUN_SB[is.na(MB_train_median$TEAM_BASERUN_SB)==TRUE] <- median(MB_train_median$TEAM_BASERUN_SB, na.rm = TRUE)
+MB_train_median$TEAM_BASERUN_CS[is.na(MB_train_median$TEAM_BASERUN_CS)==TRUE] <- median(MB_train_median$TEAM_BASERUN_CS, na.rm = TRUE)
+MB_train_median$TEAM_BATTING_HBP[is.na(MB_train_median$TEAM_BATTING_HBP)==TRUE] <- median(MB_train_median$TEAM_BATTING_HBP, na.rm = TRUE)
+MB_train_median$TEAM_PITCHING_SO[is.na(MB_train_median$TEAM_PITCHING_SO)==TRUE] <- median(MB_train_median$TEAM_PITCHING_SO, na.rm = TRUE)
+MB_train_median$TEAM_FIELDING_DP[is.na(MB_train_median$TEAM_FIELDING_DP)==TRUE] <- median(MB_train_median$TEAM_FIELDING_DP, na.rm = TRUE)
+MB_train_median$TEAM_BASERUN_SB_RATIO[is.na(MB_train_median$TEAM_BASERUN_SB_RATIO)==TRUE] <- median(MB_train_median$TEAM_BASERUN_SB_RATIO, na.rm = TRUE)
+MB_train_median$TEAM_BASERUN_CS_RATIO[is.na(MB_train_median$TEAM_BASERUN_CS_RATIO)==TRUE] <- median(MB_train_median$TEAM_BASERUN_CS_RATIO, na.rm = TRUE)
+MB_train_median$TEAM_BATTING_WALK[is.na(MB_train_median$TEAM_BATTING_WALK)==TRUE] <- median(MB_train_median$TEAM_BATTING_WALK, na.rm = TRUE)
+```
+
+The log-transformation is used to deal with skewed data. Log transformation can decrease the variability of data and make data conform more closely to the normal distribution. Above histogram we saw many skewed distibutions, apply log transformation on those variables.
+
+```{r}
+# Log transformation
+MB_train_log <- MB_train
+# replace by log
+MB_train_log$TEAM_FIELDING_E <- log(MB_train_log$TEAM_FIELDING_E)
+MB_train_log$TEAM_PITCHING_H <- log(MB_train_log$TEAM_PITCHING_H)
+MB_train_log$TEAM_PITCHING_SO[MB_train_log$TEAM_PITCHING_SO==0] <- 1
+MB_train_log$TEAM_PITCHING_SO <- log(MB_train_log$TEAM_PITCHING_SO)
+MB_train_log$TEAM_PITCHING_BB[MB_train_log$TEAM_PITCHING_BB==0] <- 1
+MB_train_log$TEAM_PITCHING_BB <- log(MB_train_log$TEAM_PITCHING_BB)
+```
+
+To remove outliers, we  decide to trim the data by 99% and 95%.
+
+```{r}
+ggplot(stack(MB_train), aes(x = ind, y = values)) +
+  geom_boxplot(col="darkblue") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+ggplot(stack(MB_train_mean), aes(x = ind, y = values)) +
+  geom_boxplot(col="darkblue") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+ggplot(stack(MB_train_median), aes(x = ind, y = values)) +
+  geom_boxplot(col="darkblue") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+ggplot(stack(MB_train_log), aes(x = ind, y = values)) +
+  geom_boxplot(col="darkblue") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+```
+First we need to calculate trimming percentile value for TEAM_FIELDING_E, TEAM_PITCHING_H, TEAM_PITCHING_SO, TEAM_PITCHING_BB. Because these variables having highest number of extreme outliers.
+
+```{r}
+# trimming percentile value
+quant_95_TEAM_FIELDING_E <- unname(quantile(MB_train_mean$TEAM_FIELDING_E, probs=c(0.01,0.05,0.95,0.99))[3])
+quant_95_TEAM_PITCHING_H <- unname(quantile(MB_train_mean$TEAM_PITCHING_H, probs=c(0.01,0.05,0.95,0.99))[3])
+quant_95_TEAM_PITCHING_SO <- unname(quantile(MB_train_mean$TEAM_PITCHING_SO, probs=c(0.01,0.05,0.95,0.99))[3])
+quant_95_TEAM_PITCHING_BB <- unname(quantile(MB_train_mean$TEAM_PITCHING_BB, probs=c(0.01,0.05,0.95,0.99))[3])
+
+quant_99_TEAM_FIELDING_E <- unname(quantile(MB_train_mean$TEAM_FIELDING_E, probs=c(0.01,0.05,0.95,0.99))[4])
+quant_99_TEAM_PITCHING_H <- unname(quantile(MB_train_mean$TEAM_PITCHING_H, probs=c(0.01,0.05,0.95,0.99))[4])
+quant_99_TEAM_PITCHING_SO <- unname(quantile(MB_train_mean$TEAM_PITCHING_SO, probs=c(0.01,0.05,0.95,0.99))[4])
+quant_99_TEAM_PITCHING_BB <- unname(quantile(MB_train_mean$TEAM_PITCHING_BB, probs=c(0.01,0.05,0.95,0.99))[4])
+```
+```{r}
+# Trim data by 5th & 95th percentile
+MB_train_95trim <- MB_train_mean
+MB_train_95trim$TEAM_FIELDING_E[MB_train_95trim$TEAM_FIELDING_E > quant_95_TEAM_FIELDING_E] <- quant_95_TEAM_FIELDING_E
+MB_train_95trim$TEAM_PITCHING_H[MB_train_95trim$TEAM_PITCHING_H > quant_95_TEAM_PITCHING_H] <- quant_95_TEAM_PITCHING_H
+MB_train_95trim$TEAM_PITCHING_SO[MB_train_95trim$TEAM_PITCHING_SO > quant_95_TEAM_PITCHING_SO] <- quant_95_TEAM_PITCHING_SO
+MB_train_95trim$TEAM_PITCHING_BB[MB_train_95trim$TEAM_PITCHING_BB > quant_95_TEAM_PITCHING_BB] <- quant_95_TEAM_PITCHING_BB
+
+# Trim data by 1st & 99th percentile
+MB_train_99trim <- MB_train_mean
+MB_train_99trim$TEAM_FIELDING_E[MB_train_99trim$TEAM_FIELDING_E > quant_99_TEAM_FIELDING_E] <- quant_99_TEAM_FIELDING_E
+MB_train_99trim$TEAM_PITCHING_H[MB_train_99trim$TEAM_PITCHING_H > quant_99_TEAM_PITCHING_H] <- quant_99_TEAM_PITCHING_H
+MB_train_99trim$TEAM_PITCHING_SO[MB_train_99trim$TEAM_PITCHING_SO > quant_99_TEAM_PITCHING_SO] <- quant_99_TEAM_PITCHING_SO
+MB_train_99trim$TEAM_PITCHING_BB[MB_train_99trim$TEAM_PITCHING_BB > quant_99_TEAM_PITCHING_BB] <- quant_99_TEAM_PITCHING_BB
+```
+
+After remove extreme outliers data looks quite normalize. 
+
+```{r}
+# visualize
+par(mfrow=c(3,1))
+hist(MB_train_log$TEAM_FIELDING_E, breaks = 20)
+hist(MB_train_95trim$TEAM_FIELDING_E, breaks = 20)
+hist(MB_train_99trim$TEAM_FIELDING_E, breaks = 20)
+par(mfrow=c(3,1))
+
+par(mfrow=c(3,1))
+hist(MB_train_log$TEAM_PITCHING_H, breaks = 20)
+hist(MB_train_95trim$TEAM_PITCHING_H, breaks = 20)
+hist(MB_train_99trim$TEAM_PITCHING_H, breaks = 20)
+par(mfrow=c(3,1))
+
+par(mfrow=c(3,1))
+hist(MB_train_log$TEAM_PITCHING_SO, breaks = 20)
+hist(MB_train_95trim$TEAM_PITCHING_SO, breaks = 20)
+hist(MB_train_99trim$TEAM_PITCHING_SO, breaks = 20)
+par(mfrow=c(3,1))
+
+par(mfrow=c(3,1))
+hist(MB_train_log$TEAM_PITCHING_BB, breaks = 20)
+hist(MB_train_95trim$TEAM_PITCHING_BB, breaks = 20)
+hist(MB_train_99trim$TEAM_PITCHING_BB, breaks = 20)
+par(mfrow=c(3,1))
+```
+
+## Build Models
+
+The primary metrics used for determining the accuracy of the model were Adjusted R-Squared, $R^2$, MSE values. The `stats` package helps to quickly perform the calculations and provides a table output of the summary. The combination of the $R^2$, $Adj R^2$, MSE and F-statistics scored gives insight as to which specific variables gave the best performing model. p-value to determine the statistical significance of each coefficient included in the model. A p-value of less than 0.5 indicates the variable is statistically significant.
+
+```{r}
+# model 1
+model_1 <- lm(TARGET_WINS ~ . , data = mb_hist)
+summary(model_1)
+
+par(mfrow=c(2,2))
+plot(model_1)
+
+# model 2
+model_2 <- lm(TARGET_WINS ~ ., data=MB_train_mean)
+summary(model_2)
+
+model_2 <- lm(TARGET_WINS ~ ., data=MB_train_mean[c(2,3,4,5,6,7,8,9,15,16,17,19,21)])
+summary(model_2)
+
+par(mfrow=c(2,2))
+plot(model_2)
+
+# Model 3
+model_3 <- lm(TARGET_WINS ~ ., data=MB_train_median)
+summary(model_3)
+
+model_3 <- lm(TARGET_WINS ~ ., data=MB_train_median[c(2,3,4,5,6,7,8,9,15,16,17,19,21)])
+summary(model_3)
+
+par(mfrow=c(2,2))
+plot(model_3)
+
+# model 4
+model_4 <- lm(TARGET_WINS ~ ., data=MB_train_log)
+summary(model_4)
+
+model_4 <- lm(TARGET_WINS ~ ., data=MB_train_log[c(2,3,4,5,6,7,8,9,15,16,17)])
+summary(model_4)
+
+par(mfrow=c(2,2))
+plot(model_4)
+
+# model 5 
+model_5 <- lm(TARGET_WINS ~ ., data=MB_train_95trim)
+summary(model_5)
+
+model_5 <- lm(TARGET_WINS ~ ., data=MB_train_95trim[c(2,3,4,5,6,7,8,12,13,15,16,20,21)])
+summary(model_5)
+
+par(mfrow=c(2,2))
+plot(model_5)
+
+# model 6 
+model_6 <- lm(TARGET_WINS ~ ., data=MB_train_99trim)
+summary(model_6)
+
+model_6 <- lm(TARGET_WINS ~ ., data=MB_train_99trim[c(2,3,4,5,6,7,8,9,12,14,15,16,17,21)])
+summary(model_6)
+
+par(mfrow=c(2,2))
+plot(model_6)
+
+
+R_2 <- summary(model_1)$r.squared
+Adj_R_2 <-  summary(model_1)$adj.r.squared
+MSE <- sum(model_1$residuals ^ 2 ) / model_1$df.residual
+F_statistics <- summary(model_1)$fstatistic[1]
+
+m2_R_2 <- summary(model_2)$r.squared
+m2_Adj_R_2 <-  summary(model_2)$adj.r.squared
+m2_MSE <- sum(model_2$residuals ^ 2 ) / model_2$df.residual
+m2_F_statistics <- summary(model_2)$fstatistic[1]
+
+m3_R_2 <- summary(model_3)$r.squared
+m3_Adj_R_2 <-  summary(model_3)$adj.r.squared
+m3_MSE <- sum(model_3$residuals ^ 2 ) / model_3$df.residual
+m3_F_statistics <- summary(model_3)$fstatistic[1]
+
+m4_R_2 <- summary(model_4)$r.squared
+m4_Adj_R_2 <-  summary(model_4)$adj.r.squared
+m4_MSE <- sum(model_4$residuals ^ 2 ) / model_4$df.residual
+m4_F_statistics <- summary(model_4)$fstatistic[1]
+
+m5_R_2 <- summary(model_5)$r.squared
+m5_Adj_R_2 <-  summary(model_5)$adj.r.squared
+m5_MSE <- sum(model_5$residuals ^ 2 ) / model_5$df.residual
+m5_F_statistics <- summary(model_5)$fstatistic[1]
+
+m6_R_2 <- summary(model_6)$r.squared
+m6_Adj_R_2 <-  summary(model_6)$adj.r.squared
+m6_MSE <- sum(model_6$residuals ^ 2 ) / model_6$df.residual
+m6_F_statistics <- summary(model_6)$fstatistic[1]
+
+
+
+ compare_model1 <- rbind(R_2, Adj_R_2, MSE, F_statistics )
+ compare_model2 <- rbind(m2_R_2, m2_Adj_R_2, m2_MSE, m2_F_statistics )
+ compare_model3 <- rbind(m3_R_2, m3_Adj_R_2, m3_MSE, m3_F_statistics )
+ compare_model4 <- rbind(m4_R_2, m4_Adj_R_2, m4_MSE, m4_F_statistics )
+ compare_model5 <- rbind(m5_R_2, m5_Adj_R_2, m5_MSE, m5_F_statistics )
+ compare_model6 <- rbind(m6_R_2, m6_Adj_R_2, m6_MSE, m6_F_statistics )
+
+compare <- data.frame(compare_model1, compare_model2, compare_model3, compare_model4, compare_model5,compare_model6)
+colnames(compare) <- c("Model 1", "Model 2", "Model 3", "Model 4", "Model 5", "Model 6")
+
+kable(compare)
+```
+
+## Model Selection 
+
+The above table we see, model 4 and model 2 are looking the best fit. But in model 4 if we look at p-value of all explanatory  variables is higer than 0.05 which is not statistically significant.So, we will go with Model 2, which having high $R^2$, $Adj R ^ 2$ and F-Statistics. Lower values of RMSE indicate better fit. RMSE is a good measure of how accurately the model predicts the response, and it is the most important criterion for fit if the main purpose of the model is prediction. 
+
+```{r}
+MB_test<- read.csv("https://raw.githubusercontent.com/mkollontai/DATA621_GroupWork/master/HW1/moneyball-evaluation-data.csv")
+MB_test$TEAM_BATTING_1B <- MB_test$TEAM_BATTING_H - MB_test$TEAM_BATTING_2B - MB_test$TEAM_BATTING_3B - MB_test$TEAM_BATTING_HR
+MB_test$TEAM_BASERUN_SB_RATIO <- MB_test$TEAM_BASERUN_SB/(MB_test$TEAM_BASERUN_SB + MB_test$TEAM_BASERUN_CS)
+MB_test$TEAM_BASERUN_CS_RATIO <- MB_test$TEAM_BASERUN_CS/(MB_test$TEAM_BASERUN_SB + MB_test$TEAM_BASERUN_CS)
+MB_test$TEAM_BATTING_WALK <- MB_test$TEAM_BATTING_BB + MB_test$TEAM_BATTING_HBP
+
+# replace by median
+MB_test$TEAM_BATTING_SO[is.na(MB_test$TEAM_BATTING_SO)==TRUE] <- median(MB_test$TEAM_BATTING_SO, na.rm = TRUE)
+MB_test$TEAM_BASERUN_SB[is.na(MB_test$TEAM_BASERUN_SB)==TRUE] <- median(MB_test$TEAM_BASERUN_SB, na.rm = TRUE)
+MB_test$TEAM_BASERUN_CS[is.na(MB_test$TEAM_BASERUN_CS)==TRUE] <- median(MB_test$TEAM_BASERUN_CS, na.rm = TRUE)
+MB_test$TEAM_BATTING_HBP[is.na(MB_test$TEAM_BATTING_HBP)==TRUE] <- median(MB_test$TEAM_BATTING_HBP, na.rm = TRUE)
+MB_test$TEAM_PITCHING_SO[is.na(MB_test$TEAM_PITCHING_SO)==TRUE] <- median(MB_test$TEAM_PITCHING_SO, na.rm = TRUE)
+MB_test$TEAM_FIELDING_DP[is.na(MB_test$TEAM_FIELDING_DP)==TRUE] <- median(MB_test$TEAM_FIELDING_DP, na.rm = TRUE)
+MB_test$TEAM_BASERUN_SB_RATIO[is.na(MB_test$TEAM_BASERUN_SB_RATIO)==TRUE] <- median(MB_test$TEAM_BASERUN_SB_RATIO, na.rm = TRUE)
+MB_test$TEAM_BASERUN_CS_RATIO[is.na(MB_test$TEAM_BASERUN_CS_RATIO)==TRUE] <- median(MB_test$TEAM_BASERUN_CS_RATIO, na.rm = TRUE)
+MB_test$TEAM_BATTING_WALK[is.na(MB_test$TEAM_BATTING_WALK)==TRUE] <- median(MB_test$TEAM_BATTING_WALK, na.rm = TRUE)
+
+prediction <- predict(model_2, MB_test, interval = "prediction")
+
+DT::datatable(prediction)
+
+summary(prediction)
+
+MB_test$PRED_WINS <- round(predict(model_2,  newdata = MB_test),0)
+
+Pred_Data <- MB_test[, c("INDEX","PRED_WINS")]
+
+DT::datatable(Pred_Data)
+
+```
+
+The above tables shows predicted win for the test data. 
+
+## Conclusion
+
+This assignment helps us to understand how to performing the EDA, Data Preparation and Model building. 
+Building process. The statistical calculation and graphical results helps us to understand the distribution of data. 
+
+## Future work
+
+Explore additional outside factors such as state of mind of the player, weather, location impact on the win. These factors in near future we will consider to predict the Win. 
+
+
+
+
