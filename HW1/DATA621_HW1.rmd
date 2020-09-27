@@ -1,0 +1,393 @@
+---
+title: "DATA621_HW1_team"
+author: "Matthew Baker, Misha Kollontai, Erinda Budo, Don Padmaperuma, Subhalaxmi Rout"
+date: "9/20/2020"
+output: pdf_document
+---
+
+## Overview
+In this homework assignment, we will explore, analyze and model a data set containing approximately 2200
+records. Each record represents a professional baseball team from the years 1871 to 2006 inclusive. Each record
+has the performance of the team for the given year, with all of the statistics adjusted to match the performance of
+a 162 game season.
+Our objective is to build a multiple linear regression model on the training data to predict the number of wins
+for the team. 
+
+## Libraries  
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(ggcorrplot)
+library(pastecs)
+library(reshape)
+library(ggplot2)
+library(mice)
+library(VIM)
+library(corrplot)
+library(car)
+library(jtools)
+```
+
+## Data Import and Prep
+
+The original data was loaded containing 2276 rows and 16 columns related to batting, base run, pitching, and fielding. A summary and boxplots of all variables suggest some columns have missing data, and some may contain outliers.
+
+```{r}
+#Read the training and test data
+MB_train <- read.csv("https://raw.githubusercontent.com/mkollontai/DATA621_GroupWork/master/HW1/moneyball-training-data.csv")
+MB_test <- read.csv("https://raw.githubusercontent.com/mkollontai/DATA621_GroupWork/master/HW1/moneyball-evaluation-data.csv")
+```
+
+```{r}
+dim(MB_train)
+```
+
+```{r}
+head(MB_train)
+```
+
+```{r}
+#elimination index column in both data files
+MB_train <- MB_train[-1]
+MB_test <- MB_train[-1]
+```
+
+```{r}
+#subset the batting  stats
+ MB_train_bat<-MB_train[c("TEAM_BATTING_H"  , "TEAM_BATTING_2B" , "TEAM_BATTING_3B" , "TEAM_BATTING_HR", "TEAM_BATTING_BB" , "TEAM_BATTING_SO")]
+
+#subset the baserunning  stats
+ MB_train_base<-MB_train[c("TEAM_BASERUN_SB" , "TEAM_BASERUN_CS")]
+
+#subset the fielding  stats
+ MB_train_field<-MB_train[c("TEAM_FIELDING_E",  "TEAM_FIELDING_DP")]
+
+#subset the pitching  stats
+ MB_train_pitch<-MB_train[c("TEAM_PITCHING_H" ,"TEAM_PITCHING_HR" ,"TEAM_PITCHING_BB" ,"TEAM_PITCHING_SO")]
+```
+
+
+## Data Summaries
+We can only use the variables given to us (or variables that we derive from the variables
+provided). Below codes shows the variables of interest in the data set:
+
+
+```{r}
+summary(MB_train)
+```
+
+Few more descriptive statistics of MB_train data.The descriptive statistics below shows the the mean, mode, **standard deviation**, minimum and maximum of each variable in the dataset.
+
+```{r}
+stat.desc(MB_train, basic = F)
+```
+
+
+## Data Exploration Visualizations
+
+
+Let's take a closer look at the number of wins or **TARGET_WINS** variable. 
+
+```{r}
+boxplot(MB_train$TARGET_WINS, xlab = "Target Wins", ylab = "# of wins")
+```
+
+
+Let's look at all of the metrics in order to evaluate the presence of outliers and quality of the data overall. 
+
+```{r echo=FALSE}
+ggplot(stack(MB_train[,-1]), aes(x = ind, y = values)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)
+        )
+```
+
+```{r}
+par(mfrow=c(2,3))
+x <- c(1:6)
+for (val in x) {
+  boxplot(MB_train_bat[,val], xlab=names(MB_train_bat[val]))$out
+}
+```
+```{r}
+par(mfrow=c(1,2))
+x <- c(1:2)
+for (val in x) {
+  boxplot(MB_train_base[,val], xlab=names(MB_train_base[val]))$out
+}
+```
+```{r}
+par(mfrow=c(1,2))
+x <- c(1:2)
+for (val in x) {
+  boxplot(MB_train_field[,val], xlab=names(MB_train_field[val]))$out
+}
+```
+```{r}
+par(mfrow=c(2,2))
+x <- c(1:4)
+for (val in x) {
+  boxplot(MB_train_pitch[,val], xlab=names(MB_train_pitch[val]))$out
+}
+```
+
+
+
+
+### Relationship with target variable TARGET_WIN
+
+Using the plots below we can get a quick overview of relationships between our input variables and the target variable. Unfortunately nearly all of our variables in their current state are fairly widely distributed and do not show an obvious trend in the relationship with the wins. It appears that we need to account for multiple variables in order to create an accurate model. 
+
+```{r}
+#### Target Wins vs all variables
+par(mfrow=c(3,5))
+x <- c(2:16)
+for (val in x) {
+plot(MB_train[,val],MB_train$TARGET_WINS, xlab=names(MB_train[val]))
+}
+```
+
+
+## Finding Correlation among predictor variables
+
+```{r}
+par(mfrow=c(1,1))
+cor(MB_train, use = "complete.obs")[,1]
+```
+
+By looking at correlation between our predictor variables we can get an idea of those that are tied closely together - this may help us determine when including multiples may be redundant and removing one or two of the closely related variables may simplify our model without a strong negative impact on our model accuracy. 
+
+```{r}
+corr<- round(cor(MB_train[-1], use="pairwise.complete.obs", method = "pearson"),1)
+corrplot(corr, method = "color", 
+         type = "upper", order = "original", number.cex = .7,
+         addCoef.col = "black", # Add coefficient of correlation
+         tl.col = "black", tl.srt = 90, # Text label color and rotation
+                  # hide correlation coefficient on the principal diagonal
+         diag = TRUE)
+```
+
+## Cleaning Data based on what we know about the game
+
+Let's take a look at  the number of strikeouts a team pitching staff has achieved in a given season. First, let's calculate the maximum number strikeouts a team can achieve per season assuming 162 games. This would require 3 strikeouts every 9 innings.
+
+The record number of strikeouts by a pitching staff in a season is 1,687 by the Houston Astros in 2018 (this datapoint is not included here since the data only covers up to 2006). Since some of the data is extrapolated to assume a 162 game season, it's possible some earlier seasons may equate to more, so let's use 2000 as a max possible value. 
+
+```{r Strikeouts by Pitchers}
+Max_SO <- 162*9*3 
+#This assumes a season in which every out was a strikeout (obviously never happened)
+
+ggplot(stack(MB_train[,-1]), aes(x = ind, y = values)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) + 
+  geom_hline(yintercept=Max_SO, linetype = 'dashed') + 
+  geom_hline(yintercept=2000, linetype = 'dashed', color='red')
+```
+
+According to [MLB.com](http://mlb.mlb.com/mlb/history/rare_feats/index.jsp?feature=most_hits_game) the most hits allowed in a game was 33. Assuming a 162 game seaosn, the highest number of hits allowed in a season possible would be $162*33 = 5346$ hits. Anything above this is impossible.
+
+```{r Hits by Pitchers}
+most_hits <- 162*33 
+
+ggplot(stack(MB_train[,-1]), aes(x = ind, y = values)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) + 
+  geom_hline(yintercept=most_hits, linetype = 'dashed', color='red')
+```
+
+Based on the graph above, it looks like we are potentially leaving a large amount of erroneous data in the set, but we have no factual basis to remove it on. 
+
+We can clearly see that there is a fair amount of outliers in our data. To begin, let's simply remove these rows of data since we can't have faith in the rest of the data associated with the measurement. We can also remove the rows associated with other clearly erroneous data:
+
+* No team has ever hit 0 home runs in a season according to [baseball-almanac1](https://www.baseball-almanac.com/recbooks/rb_hr7.shtml), so remove rows that claim such a season.
+
+* No team has ever had 0 hitter strikeouts in a season according to [baseball-almanac2](https://www.baseball-almanac.com/recbooks/rb_strike2.shtml), so remove rows that claim such a season.
+
+* According to [this article](http://research.sabr.org/journals/pitchers-giving-up-home-runs#:~:text=The%20fewest%20home%20runs%20given,more%20productive%20home%20run%20year.) "The fewest home runs given up by a pitching staff in one season was the four relinquished by the marvelous mound corps of the 1902 Pittsburgh Pirates over a 140-game schedule.
+
+* Trusting the [research of user BowlOfRed](https://sports.stackexchange.com/questions/16246/what-is-the-mlb-record-for-most-errors-by-one-team-in-one-season-during-the-mode) the highest number of errors by a team in a season is Washington in 1886 committing 867 errors in 122 games. If we extrapolate that number to 162 games we can cut out the false data points here as well. 
+
+
+```{r}
+max_errors <- 867/122*162
+
+MB_train_clean <- MB_train[!(MB_train$TEAM_PITCHING_SO > 2000),]
+MB_train_clean <- MB_train_clean[!(MB_train_clean$TEAM_BATTING_HR == 0),]
+MB_train_clean <- MB_train_clean[!(MB_train_clean$TEAM_BATTING_SO == 0),]
+MB_train_clean <- MB_train_clean[!(MB_train_clean$TEAM_PITCHING_HR < 4),]
+MB_train_clean <- MB_train_clean[!(MB_train_clean$TEAM_PITCHING_H > most_hits),]
+MB_train_clean <- MB_train_clean[!(MB_train_clean$TEAM_FIELDING_E > max_errors),]
+```
+
+#### Impute Missing Data
+
+We can see that a large amount of datapoints are missing. Let's replace the NA's with the mean value for each column. 
+
+```{r}
+for(i in 1:ncol(MB_train_clean)){
+  MB_train_clean[is.na(MB_train_clean[,i]), i] <- mean(MB_train_clean[,i], na.rm = TRUE)
+}
+```
+
+## Visualizations of cleaned data
+
+Another look at the variables. Being able to examine Skewness and outliers of the data will help us to chose the model. This is important as some models will require transformation of data.
+
+
+```{r echo=FALSE}
+ggplot(stack(MB_train_clean[,-1]), aes(x = ind, y = values)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+  ylim(0,2500)
+```
+
+
+```{r}
+par(mfrow = c(3,5))
+datasub = melt(MB_train_clean)
+ggplot(datasub, aes(x=value)) + 
+  geom_density(fill = 'blue') + facet_wrap(~variable, scales = 'free')
+```
+
+## Prediction models
+
+To begin let's take a look at the model using all of the original data. This model includes all outliers that we looked over in the section above. 
+
+```{r}
+model0 <- lm(TARGET_WINS ~., data = MB_train)
+summary(model0)
+```
+
+We can clearly see that only a few (3) of our variables seem to have low enough p-values to be deemed statistically significant predictors. There are also 2085 observation deleted due to missing data - this is a very large chunk of wasted datapoints!
+
+Next let's create a model that removes the outliers and patently false values identified in the previous section as well as the missing datapoints. 
+
+### Model 1
+
+```{r}
+model1 <- lm(TARGET_WINS ~., data = MB_train_clean)
+summary(model1)
+```
+
+We can immediately see how much more statistically significant each of our cleaned predictors are - nearly every single p-value is noticeably lower than it was in the initial model. This suggests that the data in this model is more likely to have a relationship with our target variable. 
+
+#### Diagnostics plots  
+
+```{r}
+par(mfrow=c(2,2))
+plot(model1)
+```
+
+
+
+### Model 2  
+
+Variables will be removed one by one until the most optimal output is achieved. We did this in order to remove those features that do not have a significant effect on the dependent variable or prediction of output and simplify our model. To start we wikll remove the variables with the highest p-values.
+
+#### Summary and vif
+
+```{r echo=FALSE}
+model2 <- lm(TARGET_WINS ~ . - TEAM_BASERUN_CS - TEAM_BATTING_HBP, data= MB_train_clean)
+summary(model2)
+```
+
+#### Diagnostics plots  
+
+```{r}
+par(mfrow=c(2,2))
+plot(model2)
+```
+
+### Model 3
+
+This model will focus only on the variables that are maximally statistically significant - in order to see if only those variables allow for a better model.
+
+#### Summary and vif
+```{r echo=FALSE}
+model3 <- lm(TARGET_WINS ~ . - TEAM_BASERUN_CS - TEAM_BATTING_HBP - TEAM_BATTING_H    - TEAM_BATTING_2B -  TEAM_PITCHING_HR, data= MB_train_clean)
+summary(model3)
+```
+
+```{r}
+vif(model3)
+```
+#### Diagnostics plots  
+```{r}
+par(mfrow=c(2,2))
+plot(model3)
+```
+
+Looking at the plots above we can see a fairly linear Q-Q plot outside of the extreme values. The standardized residuals also appear to be fairly randomly distributed, another good sign. 
+
+Oddly enough, the strikeout metrics (along with the Fielding DP) have the highest p-values, so we can further simplify our model by removing them and see how that impacts our model.
+
+
+```{r}
+model4 <- lm(TARGET_WINS ~ . - TEAM_BASERUN_CS - TEAM_BATTING_HBP - TEAM_BATTING_H    - TEAM_BATTING_2B -  TEAM_PITCHING_HR - TEAM_BATTING_SO - TEAM_PITCHING_SO - TEAM_FIELDING_DP, data= MB_train_clean)
+summary(model4)
+```
+
+## Prediction
+
+Let's attempt a prediction using the latest model. To do so we must take a subset of our test dataset that includes only the columns we choose to use in the prediction. 
+
+```{r}
+MB_test<- read.csv("https://raw.githubusercontent.com/mkollontai/DATA621_GroupWork/master/HW1/moneyball-evaluation-data.csv")
+```
+
+Let's identify all of the rows containing obvious outliers in the data:
+
+```{r}
+Out <- function(x){
+  if (x[2] > most_hits * 1.25 | x[11] > most_hits*1.25) { 
+    return (1)
+  } else if (x[7] > Max_SO | x[14] > Max_SO) {
+    return (1)
+  } else if (x[15] > max_errors){
+    return (1)
+  } else {
+    return (0)
+  }
+}
+```
+
+```{r}
+#First we replace NAs with the median values
+for(i in 1:ncol(MB_test)){
+  MB_test[is.na(MB_test[,i]), i] <- median(MB_test[,i], na.rm = TRUE)
+}
+
+MB_test$Outliers <- apply(MB_test, 1, FUN = Out) 
+MB_test$P_Wins <- round(predict(model4,  newdata = MB_test),0)
+hist(MB_test$P_Wins)
+
+```
+
+Based on this histogram we can see that there are some obvious outliers in our predictions. Let us look only at the rows not tagged as having outliers in the variables used for prediction. 
+
+```{r include=FALSE}
+Real <- subset(MB_test, Outliers == 0)
+
+histA <- hist(Real$P_Wins)
+histB <- hist(MB_train_clean$TARGET_WINS)
+
+c1 <- rgb(173,216,230,max = 255, alpha = 80, names = "lt.blue")
+c2 <- rgb(255,192,203, max = 255, alpha = 80, names = "lt.pink")
+```
+
+```{r}
+plot(histA, col = c1, freq = FALSE)
+plot(histB, col = c2, freq = FALSE, add = TRUE, xlim = c(0,150))
+```
+
+This histogram overlayed on our original data suggest our predictions at least follow the values of the training dataset. The predicted data is in blue and the training data is in pink. The distribution seems close to normal, centered around 80/90 wins. The training data showed a peak between 80-85. There is nothing from this distribution that immediately jumps out as erroneous. The removal of the "Outlier" rows seems to have helped with that.
+
+We can't test out the accuracy of our model as we don't have the true 'Win' values for our test dataset, but below see a list of the predicted wins for all of the rows not containing outliers in the data:
+
+```{r}
+Real[c('INDEX','P_Wins')]
+```
+
+## Potential Future Work
+
+One approach we looked into pursuing was to split up the data into 'Batting', 'Baserun', 'Pitching' and 'Fielding' data and investigating whether or not some trends hold true for one category, but not others. Perhaps apply uniform coefficients across the categories. 
