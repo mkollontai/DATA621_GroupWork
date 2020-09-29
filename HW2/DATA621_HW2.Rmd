@@ -1,0 +1,163 @@
+---
+title: "DATA621 HW2"
+author: "Misha Kollontai, Matthew Baker, Erinda Budo, Subhalaxmi Rout, Don Padmaperuma"
+date: "9/28/2020"
+output: pdf_document
+---
+
+1. Downloading the Data
+
+```{r}
+df <- read.csv("https://raw.githubusercontent.com/mkollontai/DATA621_GroupWork/master/HW2/classification-output-data.csv")
+df_hw2 <- df[,c('class', 'scored.class','scored.probability')]
+```
+
+We have pulled the data and simplified our dataframe into just the 3 columns in question:
+
+* class
+* scored.class
+* scored.probability
+
+2. Simple Confusion Matrix
+
+```{r}
+table(df_hw2$class, df_hw2$scored.class)
+```
+
+This confusion matrix shows us the number of entries of each class against what they were predicted to be. In this table the row indicates the actual class, whereas the column signifies the predicted value (scored.class). We can therefore deduce that of the 57 total cases of class '1', 27 were predicted to be class '1' correctly. The other 30 were mistakenly predicted to be of class '0'. For the actual class '0' cases, 5 were mistakenly predicted to be class '1', whereas 119 were correctly identified. 
+
+In order to calculate all of the following evaluations of the predictions made within this dataframe we need to identify the number of:
+
+* True Positives - Correctly identified class '1' cases
+* False Positives - Class '0' cases incorrectly identified as class '1'
+* True Negatives - Correctly identified class '0' cases
+* False Negatives - Class '1' cases incorrectly identified as class '0'
+
+In order to avoid repeating code required to identify these outcomes, let's crate a function that calculates the number associated with each of these four outcomes.
+
+```{r outcome formula}
+library(dplyr)
+outcomes <- function(df){
+  outs <- aggregate(df, by = list(df$class, df$scored.class), FUN=length) %>%
+    select(1:3) %>%
+    rename('count' = 'class')
+  return(outs)
+  #Within this df, in the 'count' column: 
+  #the first row is our True Negative (TN), 
+  #the second row is False Negatives (FN), 
+  #third row is False Positives (FP) and 
+  #final row is the True Positives (TP). 
+}
+
+```
+
+3. Accuracy Calculation
+
+To calculate accuracy we must use the formula $$Accuracy = \frac{TP+TN}{TP+FP+TN+FN}$$
+
+```{r Accuracy}
+acc <- function(df){
+  outs <- outcomes(df)
+  TN <- outs$count[1]
+  FN <- outs$count[2]
+  TP <- outs$count[3]
+  FP <- outs$count[4]
+  acc <- (TP+TN)/(TP+FP+TN+FN)
+  return(acc)
+}
+```
+
+```{r}
+acc(df_hw2)
+```
+
+4. Classification Error Rate Calculation
+
+To calculate classification error we must use the formula $$Classification Error Rate = \frac{FP+FN}{TP+FP+TN+FN}$$
+
+```{r CER}
+cer <- function(df){
+  outs <- outcomes(df)
+  TN <- outs$count[1]
+  FN <- outs$count[2]
+  TP <- outs$count[3]
+  FP <- outs$count[4]
+  cer <- (FP+FN)/(TP+FP+TN+FN)
+  return(cer)
+}
+```
+
+```{r}
+cer(df_hw2)
+```
+
+5. Precision Calculation
+
+To calculate precision we must use the formula $$Precision = \frac{TP}{TP+FP}$$
+
+```{r Precision}
+prec <- function(df){
+  outs <- outcomes(df)
+  TP <- outs$count[3]
+  FP <- outs$count[4]
+  prec <- (TP)/(TP+FP)
+  return(prec)
+}
+```
+
+```{r}
+prec(df_hw2)
+```
+
+6. Sensitivity Calculation
+
+To calculate sensitivity we must use the formula $$Sensitivity = \frac{TP}{TP+FN}$$
+
+```{r Sensitivity}
+sens <- function(df){
+  outs <- outcomes(df)
+  FN <- outs$count[2]
+  TP <- outs$count[3]
+  sens <- (TP)/(TP+FN)
+  return(sens)
+}
+```
+
+```{r}
+sens(df_hw2)
+```
+7. Specificity Calculation
+
+To calculate specficity we must use the formula $$Specificity = \frac{TN}{TN+FP}$$
+
+```{r Specificity}
+spec <- function(df){
+  outs <- outcomes(df)
+  TN <- outs$count[1]
+  FP <- outs$count[4]
+  sens <- (TN)/(TN+FP)
+  return(sens)
+}
+```
+
+```{r}
+spec(df_hw2)
+```
+
+8. F1 Calculation
+
+To calculate F1 we must use the formula $$F1 = \frac{2*Precision*Sensitivity}{Precision+Sensitivity}$$
+
+```{r F1}
+f1 <- function(df){
+  prec <- prec(df)
+  sens <- sens(df)
+  f1 <- (2*prec*sens)/(prec+sens)
+  return(f1)
+}
+```
+
+```{r}
+f1(df_hw2)
+```
+}
