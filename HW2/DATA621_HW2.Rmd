@@ -91,6 +91,13 @@ cer <- function(df){
 cer(df_hw2)
 ```
 
+The calculations for there two measures are such that summing the two should yield 1:
+
+```{r}
+acc(df_hw2)+cer(df_hw2)
+
+```
+
 5. Precision Calculation
 
 To calculate precision we must use the formula $$Precision = \frac{TP}{TP+FP}$$
