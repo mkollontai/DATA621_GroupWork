@@ -1,0 +1,330 @@
+---
+title: "DATA621 HW3"
+author: "Matthew Baker, Misha Kollontai, Erinda Budo, Don Padmaperuma, Subhalaxmi Rout"
+date: "10/21/2020"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,warning=FALSE)
+```
+
+
+## Overview
+In this homework assignment, we will build a binary logistic regression model on the training data set to predict whether the neighborhood will be at risk for high crime levels. We will provide classifications and probabilities for the evaluation data set using our binary logistic regression model.  Below is a short description of the variables of interest in the data set: 
+ 
+* zn: proportion of residential land zoned for large lots (over 25000 square feet) (predictor variable)
+* indus: proportion of non-retail business acres per suburb (predictor variable)
+* chas: a dummy var. for whether the suburb borders the Charles River (1) or not (0) (predictor variable)
+* nox: nitrogen oxides concentration (parts per 10 million) (predictor variable)
+* rm: average number of rooms per dwelling (predictor variable)
+* age: proportion of owner-occupied units built prior to 1940 (predictor variable)
+* dis: weighted mean of distances to five Boston employment centers (predictor variable)
+* rad: index of accessibility to radial highways (predictor variable)
+* tax: full-value property-tax rate per $10,000 (predictor variable)
+* ptratio: pupil-teacher ratio by town (predictor variable)
+* black: 1000(Bk - 0.63)2 where Bk is the proportion of blacks by town (predictor variable)
+* lstat: lower status of the population (percent) (predictor variable)
+* medv: median value of owner-occupied homes in $1000s (predictor variable)
+* target: whether the crime rate is above the median crime rate (1) or not (0) **(response variable)**
+
+
+
+## Libraries 
+
+```{r,message=FALSE}
+#load packages
+library(knitr)
+library(dplyr)
+library(kableExtra)
+library(stats)
+library(corrplot)
+library(psych)
+library(dplyr)
+library(ggplot2)
+library(reshape2)
+library(tidyr)
+library(broom)
+library(car)
+library(pROC)
+```
+ 
+ 
+## Data Import
+
+
+```{r,message=FALSE}
+#load training data
+url_crime_df<- 'https://raw.githubusercontent.com/ErindaB/data-621/main/crime-training-data_modified.csv'
+crime_train_df <- read.csv(url_crime_df, header = TRUE)
+kable(crime_train_df[1:15,]) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```
+
+## Data Exploration
+
+Let's calculate summary statistics and generate a box plot for further review.
+
+```{r,message=FALSE}
+#summarize training data
+kable(psych::describe(crime_train_df)) %>% kable_styling(bootstrap_options = c("striped", "hover", "responsive"))
+```
+
+
+There are 466 records in our training set and no missing values for any variable. We see no missing values that would require imputation using medians or other methods.
+
+Now let's visualize using box plots. We are going to separate the box plots by the target value, which will tell if the neighborhood is high crime or not.
+
+```{r,message=FALSE}
+#boxplots of each variable split by target value
+crime_plot <- melt(crime_train_df, id.vars= 'target') %>% mutate(target = as.factor(target))
+ggplot(data = crime_plot, aes(x = variable, y = value)) + geom_boxplot(aes(fill = target)) + facet_wrap( ~ variable, , dir = "h", scales = 'free') + scale_fill_manual(values=c("blue3", "red3"))
+```
+
+
+In order to check for skewness, we will examine the distribution of each variable independent of target variable value.
+
+```{r,message=FALSE}
+#histograms of training set
+ggplot(crime_plot,aes(value)) + geom_histogram(bin=25,fill="Red3") + facet_wrap( ~ variable, , dir = "h", scales = 'free')
+```
+
+In particular, zn, nox, age, dis, ptratio, and lstat seem likely candidates for transformations.
+
+
+Let's check  for covariance.
+
+```{r,message=FALSE}
+#correlations
+cor_train <- cor(crime_train_df, method="pearson") 
+kable(cor_train, "html") %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```
+
+We see some very high positive and negative correlations between variables. Let's construct a more effective visualization.
+
+```{r,message=FALSE}
+#plot correlations
+corrplot(cor_train)
+```
+
+We see candidates for combination due to covariance.
+
+As a final step, let's look just a correlation between the independent variables and the target variables.
+
+```{r}
+#correlations just with target value
+cor_train_target <- as.data.frame(cor_train) %>% dplyr::select(target)
+kable(cor_train_target, "html") %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```
+
+
+We see that Nox(nitrogen oxides concentration), shows the closest correlation with the target variable at .73. 
+Next, age, rad, tax, and indus all correlate with the target value just above .6.
+
+## Data Preparation
+
+Let's look at how transformations might solve distribution issues with some of our variables. Earlier, we saw a strong right skew in the distribution of the variable lstat, which tracks the "lower status" of a neighborhood's population. Probably not the best phrasing.
+
+```{r,message=FALSE}
+#lstat distribution
+ggplot(crime_train_df,aes(x=lstat)) + geom_histogram(bin=25,fill="Red3") 
+```
+
+What would a log transformation do to this distribution?
+
+```{r,message=FALSE}
+#lstat distribution after log transformation
+ggplot(crime_train_df,aes(x=log(lstat))) + geom_histogram(bin=25,fill="Blue3") 
+```
+
+Looks slightly better. Let's generate log transformations for all variables in the dataset.
+
+```{r,message=FALSE}
+#histrogram with log transformations of all variables
+ggplot(crime_plot,aes(log(value))) + geom_histogram(bin=25,fill="Blue3") + facet_wrap( ~ variable, , dir = "h", scales = 'free')
+```
+
+Medv looks slightly better. However, age remains strongly left skewed. Dis is now bimodal.
+
+What about other transformations such as quadratic ones?
+
+```{r,message=FALSE}
+ggplot(crime_plot,aes(sqrt(value))) + geom_histogram(bin=25,fill="Yellow3") + facet_wrap( ~ variable, , dir = "h", scales = 'free')
+```
+
+Not a lot of improvement.
+
+Let's split our training data into a true training set and a validation set. We'll go 80/20 training to validation.
+```{r,warning=FALSE}
+#split training data into true training and validation/tuning
+train <- floor(0.8 * nrow(crime_train_df))
+
+set.seed(123)
+train_ind <- sample(seq_len(nrow(crime_train_df)), size = train)
+
+df_train <- crime_train_df[train_ind, ]
+df_valid <- crime_train_df[-train_ind, ]
+```
+
+
+## Build Models
+
+We will start with a model containing  all untransformed variables.
+
+#### Model 1 - All Variables Untransformed
+
+```{r,message=FALSE}
+#build model 1 - all variables untransformed
+model1 <- glm(formula = target ~ ., family = "binomial", data = df_train)
+summary(model1)
+```
+
+Our most significant variables generally tie to the variables we saw have the highest correlations with the target value earlier. We have an AIC of 190.56 and a residual deviance of 164.56. 
+
+Let's run further diagnostics on the model. We will set a probability of .5 as being the cutoff for determining if a neighborhood will be high crime. Here, we check the relationship between the logit of the outcome and each predictive variable. (Target and the binary dummy variable chas should be ignored.) Again, these steps also could be labelled as data preparation.
+
+```{r,message=FALSE}
+#model 1 logit relationships
+prob <- predict(model1, type = "response")
+predicted.classes <- ifelse(prob > 0.5, "pos", "neg")
+head(predicted.classes)
+
+mydata <- df_train %>%
+  dplyr::select_if(is.numeric) 
+predictors <- colnames(mydata)
+
+mydata <- mydata %>%
+  mutate(logit = log(prob/(1-prob))) %>%
+  gather(key = "predictors", value = "predictor.value", -logit)
+
+ggplot(mydata, aes(logit, predictor.value))+
+  geom_point(size = 0.5, alpha = 0.5) +
+  geom_smooth(method = "loess") + 
+  theme_bw() + 
+  facet_wrap(~predictors, scales = "free_y")
+```
+
+
+
+Let's use Cook's Distance to check for outliers.
+
+```{r,message=FALSE}
+#Cook's distance
+plot(model1, which = 4, id.n = 3)
+```
+
+
+```{r,message=FALSE}
+#influential outlier checks
+model1.data <- augment(model1) %>% 
+  mutate(index = 1:n()) 
+
+kable(model1.data %>% top_n(3, .cooksd))  %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```
+
+
+In particular, let's look at the  points  that are more than 3 standardized residuals from 0.
+
+```{r,message=FALSE}
+kable(model1.data %>% 
+  filter(abs(.std.resid) > 3)) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```
+
+Observation 338 is an influential outlier. 
+
+Next, we check multicollinearity.
+
+```{r,message=FALSE}
+#model 1 vif
+car::vif(model1)
+```
+Medv has vif greater than 5 which means high amount of multicollinearity.
+
+
+So we have:
+
+1. Multiple predictors that do not have linear relationships with the logic of the outcome variable.
+2. One influential outlier - index 338.
+3. One with potentially problematically high multicollinearity.
+
+
+
+
+#### Model 2 - Remove least impactful variables
+
+The second model will only use the variables that have statistically significant p-values. We will also use some transformations for the variables where they improved the distribution. 
+
+```{r,message=FALSE}
+#build model 2
+
+model2 <- glm(formula = target ~ zn + indus + nox + age + log(dis) + rad + ptratio + medv, family = "binomial", data = df_train)
+summary(model2)
+```
+
+Removing the 4 least impactful variables as well as appling a log transformation to $dis$ has moved our AIC value from 190.6 to 178.4. Not a significant improvement, but a step in the right direction. 
+
+## Selecting the Model 
+
+Now that we have created a few models, let us select one and evaluate it against our known predictor variable. We will then calculate various metrics for this model:
+
+1. Accuracy
+2. Classification Error Rate
+3. Precision
+4. Sensitivity
+5. Specificity
+6. F1 score
+7. AUC
+8. Confusion Matrix
+
+We will then finally make predictions using the data set. 
+
+---
+
+To start, we must calculate the predictions of our model:
+
+```{r}
+pr <- data.frame(predict(model2, type = 'response', se.fit = FALSE))
+colnames(pr)[1] <- c('model')
+pr$actual <- df_train$target
+pr$guess <- ifelse(pr$model > 0.5,1,0)
+pr
+```
+
+To calculate some of the metrics we need, let's first find the 'True Positive' (TP), 'True Negative' (TN), 'False Positive' (FP) and 'False Negative' (FN) valuesusing our training dataset.  
+
+```{r}
+TP <- length(which(pr$actual == 1 & pr$guess == 1))
+TN <- length(which(pr$actual == 0 & pr$guess == 0))
+FP <- length(which(pr$actual == 0 & pr$guess == 1))
+FN <- length(which(pr$actual == 1 & pr$guess == 0))
+```
+
+$$Accuracy = \frac{TP+TN}{TP+TN+FP+FN}$$
+
+$$Classification Error Rate = \frac{FP+FN}{TP+TN+FP+FN}$$
+
+$$Precision = \frac{TP}{TP+FP}$$
+
+$$Sensitivity = \frac{TP}{TP+FN}$$
+
+$$Specificity = \frac{TN}{TN+FP}$$
+
+$$F1 = 2*\frac{Precision * Sensitivity}{Precision + Sensitivity}$$
+
+```{r, message = FALSE}
+Accuracy <- (TP+TN)/(TP+TN+FP+FN)
+CER <- (FP + FN)/(TP+TN+FP+FN)
+Precision <- TP/(TP+FP)
+Sensitivity <- TP/(TP+FN)
+Specificity <- TN/(TN+FP)
+F1 <- 2*(Precision*Sensitivity)/(Precision+Sensitivity)
+pROC_model <- roc(pr$actual, pr$guess,
+                  smoothed = TRUE,
+            # arguments for ci
+            ci=TRUE, ci.alpha=0.9, stratified=FALSE,
+            # arguments for plot
+            plot=TRUE, auc.polygon=TRUE, max.auc.polygon=TRUE, grid=TRUE,
+            print.auc=TRUE, show.thres=TRUE)
+
+```
