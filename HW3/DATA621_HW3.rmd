@@ -6,6 +6,7 @@ output:
   pdf_document: default
   html_document:
     df_print: paged
+always_allow_html: true
 ---
 
 ```{r setup, include=FALSE}
@@ -60,7 +61,7 @@ library(pROC)
 #load training data
 url_crime_df<- 'https://raw.githubusercontent.com/ErindaB/data-621/main/crime-training-data_modified.csv'
 crime_train_df <- read.csv(url_crime_df, header = TRUE)
-kable(crime_train_df[1:15,]) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+kable(crime_train_df[1:15,]) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),latex_options="scale_down")
 ```
 
 ## Data Exploration
@@ -69,7 +70,7 @@ Let's calculate summary statistics and generate a box plot for further review.
 
 ```{r,message=FALSE}
 #summarize training data
-kable(psych::describe(crime_train_df)) %>% kable_styling(bootstrap_options = c("striped", "hover", "responsive"))
+kable(psych::describe(crime_train_df), digits = 3) %>% kable_styling(bootstrap_options = c("striped", "hover", "responsive"),latex_options="scale_down")
 ```
 
 
@@ -99,7 +100,7 @@ Let's check  for covariance.
 ```{r,message=FALSE}
 #correlations
 cor_train <- cor(crime_train_df, method="pearson") 
-kable(cor_train, "html") %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+kable(cor_train, digits = 3) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),latex_options="scale_down")
 ```
 
 We see some very high positive and negative correlations between variables. Let's construct a more effective visualization.
@@ -116,7 +117,7 @@ As a final step, let's look just a correlation between the independent variables
 ```{r}
 #correlations just with target value
 cor_train_target <- as.data.frame(cor_train) %>% dplyr::select(target)
-kable(cor_train_target, "html") %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+kable(cor_train_target, digits = 3) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),latex_options="scale_down")
 ```
 
 
@@ -221,7 +222,7 @@ plot(model1, which = 4, id.n = 3)
 model1.data <- augment(model1) %>% 
   mutate(index = 1:n()) 
 
-kable(model1.data %>% top_n(3, .cooksd))  %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+kable(model1.data %>% top_n(3, .cooksd), digits = 1)  %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),latex_options="scale_down")
 ```
 
 
@@ -229,7 +230,7 @@ In particular, let's look at the  points  that are more than 3 standardized resi
 
 ```{r,message=FALSE}
 kable(model1.data %>% 
-  filter(abs(.std.resid) > 3)) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+  filter(abs(.std.resid) > 3), digits = 1) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),latex_options="scale_down")
 ```
 
 Observation 338 is an influential outlier. 
@@ -300,7 +301,7 @@ pr <- data.frame(predict(model2, type = 'response', se.fit = FALSE))
 colnames(pr)[1] <- c('model')
 pr$actual <- df_train$target
 pr$guess <- ifelse(pr$model > 0.5,1,0)
-pr
+head(pr)
 ```
 
 To calculate some of the metrics we need, let's first find the 'True Positive' (TP), 'True Negative' (TN), 'False Positive' (FP) and 'False Negative' (FN) valuesusing our training dataset.  
@@ -379,3 +380,5 @@ pie(Predict_pie, labels = pred_lab, main = 'Prediction', col=rainbow(length(crim
 ```
 
 Though the number of datapoints for the prediction is fairly low (40) and we don't know that the distribution of evaluated neighborhoods is at all similar to that of the training set, the fact that the breakdown is similar in the two sets is a promising sign for the valididy of our model. 
+
+We have no way of knowing how well our model performs with real data as we were not provided the target values for the evaluation dataset. 
