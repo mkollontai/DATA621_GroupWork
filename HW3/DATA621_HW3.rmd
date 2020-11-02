@@ -117,7 +117,7 @@ As a final step, let's look just a correlation between the independent variables
 ```{r}
 #correlations just with target value
 cor_train_target <- as.data.frame(cor_train) %>% dplyr::select(target)
-kable(cor_train_target, digits = 3) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),latex_options="scale_down")
+kable(cor_train_target, digits = 3) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
 ```
 
 
