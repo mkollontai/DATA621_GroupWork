@@ -332,7 +332,7 @@ Precision <- TP/(TP+FP)
 Sensitivity <- TP/(TP+FN)
 Specificity <- TN/(TN+FP)
 F1 <- 2*(Precision*Sensitivity)/(Precision+Sensitivity)
-metrics <- data.frame(Accuracy, CER, Precision, Sensitivity, Specificity, F1)
+metrics <- data.frame(round(Accuracy,4), round(CER,4), round(Precision,4), round(Sensitivity,4), round(Specificity,4), round(F1,4))
 
 pROC_model <- roc(pr$actual, pr$guess,
                   smoothed = TRUE,
@@ -346,6 +346,11 @@ Actually_Positive <- c(TP,FN)
 Actually_Negative <- c(FP,TN)
 conf_mtx <- data.frame(Actually_Positive,Actually_Negative)
 row.names(conf_mtx) <- c('Guess Positive', 'Guess Negative')
+```
+
+Below is our Confidence matrix, which gives us an idea of how many predictions were correct and how many we got wrong - in ther words how confident we can be in our model. Under that we can see a breakdown of each of the calculated metrics from the equations above. 
+
+```{r conf_mtx}
 conf_mtx
 ```
 
